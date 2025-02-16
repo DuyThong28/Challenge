@@ -1,0 +1,108 @@
+// Here are the computational inefficiencies and anti-patterns found in the code:
+
+// 1. Undefined Variable (lhsPriority)
+// Problem:
+// if (lhsPriority > -99) {
+// The variable lhsPriority is not defined, leading to a ReferenceError. The intention was likely to use balancePriority, but a typo causes the application to crash.
+// Solution: Replace lhsPriority with balancePriority.
+//
+// 2. Inefficient filter and sort Combination
+// Problem: The filter and sort operations are performed in two separate steps. This requires iterating over the array twice, which is computationally inefficient for large datasets.
+// Solution: Combine filtering and sorting into a single operation to reduce the number of iterations.
+//
+// 3. Redundant and Confusing filter Logic
+// Problem:
+// if (lhsPriority > -99) {
+//    if (balance.amount <= 0) {
+//      return true;
+//    }
+// }
+// This logic is unnecessarily nested and hard to read. Also, filtering out balances with amount <= 0 but keeping valid priorities (> -99) might not reflect the intended behavior.
+// Solution: Simplify the filter logic into a single condition:
+// return balancePriority > -99 && balance.amount > 0;
+//
+// 4. Recomputing Priorities
+// Problem: The getPriority function is called repeatedly during the filter, sort, which introduces redundant computations.
+// Solution: Compute the priorities once and store them in a Map or as a property of each balance.
+//
+// 5. Incorrect Key Usage for WalletRow
+// key={index}
+// Using the array index as a key is an anti-pattern in React because it can lead to rendering issues when the array changes (e.g., during reordering or filtering).
+// Solution: Use a unique property like currency for the key.
+//
+// 6. Separate formattedBalances Mapping
+// Problem:
+// const formattedBalances = sortedBalances.map(...);
+// This creates an additional array when sortedBalances could be formatted during the sorting step itself.
+// Solution: Incorporate formatting during the processing step to avoid redundant array creation.
+//
+// 7. Inefficient Dependency Array in useMemo
+// Problem: The useMemo dependency array includes prices, but prices is not used in the computation of sortedBalances. This can cause unnecessary recomputations.
+// Solution: Remove prices from the dependency array.
+//
+// 8. Hardcoded Blockchain Priorities
+// Problem: The getPriority function uses a switch statement with hardcoded priorities. This is error-prone and less maintainable if more blockchains are added.
+// Solution: Replace the switch statement with a Map for better performance and maintainability.
+// --------------------------------------------------
+//Below is the refactored version of the code with all issues addressed:
+
+
+interface WalletBalance {
+  blockchain: string;
+  currency: string;
+  amount: number;
+}
+
+interface FormattedWalletBalance extends WalletBalance {
+  formatted: string;
+}
+
+interface Props extends BoxProps {}
+
+const WalletPage: React.FC<Props> = (props: Props) => {
+  const { children, ...rest } = props;
+  const balances = useWalletBalances();
+  const prices = usePrices();
+
+  // (8) Replace switch with a Map for better performance and maintainability
+  const blockchainPriorities = new Map<string, number>([
+    ["Osmosis", 100],
+    ["Ethereum", 50],
+    ["Arbitrum", 30],
+    ["Zilliqa", 20],
+    ["Neo", 20],
+  ]);
+
+  const getPriority = (blockchain: string): number => {
+    return blockchainPriorities.get(blockchain) ?? -99; // (8) Using Map lookup instead of switch
+  };
+
+  const sortedBalances = useMemo(() => {
+    return balances
+      .map((balance) => ({
+        ...balance,
+        priority: getPriority(balance.blockchain), // (4) Compute priority once, avoiding redundant calls
+      }))
+      .filter((balance) => balance.priority > -99 && balance.amount > 0) // (1) Fixed lhsPriority typo, (3) Simplified filter logic
+      .sort((lhs, rhs) => rhs.priority - lhs.priority) // (2) Combined filter and sort in a single step for efficiency
+      .map((balance) => ({
+        ...balance,
+        formatted: balance.amount.toFixed(2), // (6) Formatting integrated into the process to avoid extra mapping
+      }));
+  }, [balances]); // (7) Removed `prices` from dependency array as it's unused in sorting
+
+  const rows = sortedBalances.map((balance) => {
+    const usdValue = prices[balance.currency] * balance.amount;
+    return (
+      <WalletRow
+        className={classes.row}
+        key={balance.currency} // (5) Use unique property instead of index for key
+        amount={balance.amount}
+        usdValue={usdValue}
+        formattedAmount={balance.formatted}
+      />
+    );
+  });
+
+  return <div {...rest}>{rows}</div>;
+};
